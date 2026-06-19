@@ -17,44 +17,10 @@
           sans-serif;
         overflow: hidden;
       }
-      #admin-panel {
-        background: #1e1e1e;
-        padding: 12px;
-        display: flex;
-        gap: 15px;
-        align-items: center;
-        border-bottom: 2px solid #333;
-      }
-      .panel-section {
-        display: flex;
-        gap: 8px;
-      }
-      input,
-      button {
-        background: #2a2a2a;
-        border: 1px solid #444;
-        color: #fff;
-        padding: 6px 12px;
-        border-radius: 4px;
-      }
-      button {
-        cursor: pointer;
-        background: #0070f3;
-      }
-      button:hover {
-        background: #0051a8;
-      }
-      #sync-btn {
-        background: #e00000;
-      }
-      #sync-btn:hover {
-        background: #aa0000;
-      }
-
       #workspace {
         position: relative;
         width: 100vw;
-        height: calc(100vh - 60px);
+        height: 100vh;
       }
       .video-wrapper {
         position: absolute;
@@ -68,47 +34,33 @@
       }
       .video-header {
         background: #222;
-        padding: 4px 8px;
+        padding: 6px 10px;
         font-size: 12px;
         display: flex;
         justify-content: space-between;
         user-select: none;
+        font-weight: bold;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
       }
       .video-container {
         width: 100%;
-        height: calc(100% - 24px);
+        height: calc(100% - 28px);
         pointer-events: auto;
       }
-      /* Simple utility helper to interact over standard embedded iframe blocking */
       .dragging .video-container {
         pointer-events: none;
       }
     </style>
   </head>
   <body>
-    <div id="admin-panel">
-      <div class="panel-section">
-        <input type="text" id="vid1-input" placeholder="YouTube Video ID 1" />
-        <input type="text" id="vid2-input" placeholder="YouTube Video ID 2" />
-        <button onclick="updateStreams()">Update Feeds</button>
-      </div>
-      <button id="sync-btn" onclick="triggerAdminSync()">
-        Force Admin Sync
-      </button>
-      <span id="sync-status" style="color: #888; font-size: 14px"
-        >View Mode</span
-      >
-    </div>
-
     <div id="workspace">
-      <!-- Stream Card 1 -->
-      <div id="card1" class="video-wrapper" style="top: 50px; left: 50px">
+      <div id="card1" class="video-wrapper" style="top: 40px; left: 40px">
         <div class="video-header">Stream Alpha (Drag Me)</div>
         <div id="player1" class="video-container"></div>
       </div>
 
-      <!-- Stream Card 2 -->
-      <div id="card2" class="video-wrapper" style="top: 50px; left: 560px">
+      <div id="card2" class="video-wrapper" style="top: 40px; left: 550px">
         <div class="video-header">Stream Beta (Drag Me)</div>
         <div id="player2" class="video-container"></div>
       </div>
@@ -126,7 +78,6 @@
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
       function onYouTubeIframeAPIReady() {
-        // Players initialize with empty targets, populated dynamically via sync data
         player1 = new YT.Player("player1", {
           videoId: "",
           playerVars: { autoplay: 1, controls: 1 },
@@ -137,50 +88,32 @@
         });
       }
 
-      // Socket Interactions
+      // Handshake initialization
       socket.on("initial-state", (state) => {
         if (isInitialLoad && player1 && player2) {
           setTimeout(() => {
             player1.cueVideoById(state.video1);
             player2.cueVideoById(state.video2);
             isInitialLoad = false;
-          }, 1000); // Small margin to ensure API is warm
+          }, 1000);
         }
       });
 
+      // Listen for changes pushed from Admin panel
       socket.on("streams-updated", (state) => {
         player1.loadVideoById(state.video1);
         player2.loadVideoById(state.video2);
       });
 
+      // Listen for Sync signals pushed from Admin panel
       socket.on("force-client-sync", (state) => {
-        document.getElementById("sync-status").innerText = "Synced to Admin";
         if (player1 && player1.seekTo)
           player1.seekTo(state.lastKnownTime1, true);
         if (player2 && player2.seekTo)
           player2.seekTo(state.lastKnownTime2, true);
       });
 
-      function updateStreams() {
-        const v1 = document.getElementById("vid1-input").value;
-        const v2 = document.getElementById("vid2-input").value;
-        socket.emit("admin-change-streams", { video1: v1, video2: v2 });
-      }
-
-      function triggerAdminSync() {
-        if (!player1 || !player2 || !player1.getCurrentTime) return;
-
-        const syncPayload = {
-          time1: player1.getCurrentTime(),
-          time2: player2.getCurrentTime(),
-          isAdminSynced: true,
-        };
-        socket.emit("admin-sync-command", syncPayload);
-        document.getElementById("sync-status").innerText =
-          "Syncing Broadcasted!";
-      }
-
-      // Client-side Local Dragging Functionality (Strictly local layout state)
+      // Client-side Local Dragging
       const cards = document.querySelectorAll(".video-wrapper");
       cards.forEach((card) => {
         const header = card.querySelector(".video-header");
