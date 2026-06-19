@@ -1,0 +1,13 @@
+{
+  "name": "synchronized-stream-dashboard",
+  "version": "1.0.0",
+  "description": "Synced YouTube streams with localized drag-and-drop layouts",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
