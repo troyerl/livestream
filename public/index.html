@@ -24,8 +24,6 @@
       }
       .video-wrapper {
         position: absolute;
-        width: 480px;
-        height: 270px;
         min-width: 200px;
         min-height: 150px;
         background: #000;
@@ -34,6 +32,7 @@
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
         display: flex;
         flex-direction: column;
+        box-sizing: border-box;
       }
       .video-header {
         background: #222;
@@ -69,7 +68,7 @@
         flex-grow: 1;
         pointer-events: auto;
       }
-      /* Simple invisible blocker overlay during resize/drag to prevent iframe fighting */
+      /* Invisible blocker overlay during resize/drag to prevent iframe fighting */
       .interacting .video-container {
         pointer-events: none;
       }
@@ -101,13 +100,17 @@
         border-radius: 0;
       }
       .filled-screen .resize-handle {
-        display: none; /* Hide sizing handle when full screen */
+        display: none;
       }
     </style>
   </head>
   <body>
     <div id="workspace">
-      <div id="card1" class="video-wrapper" style="top: 40px; left: 40px">
+      <div
+        id="card1"
+        class="video-wrapper"
+        style="top: 0px; left: 0px; width: 50vw; height: 100vh"
+      >
         <div class="video-header">
           <span>Stream Alpha</span>
           <div class="header-controls">
@@ -123,7 +126,11 @@
         <div class="resize-handle"></div>
       </div>
 
-      <div id="card2" class="video-wrapper" style="top: 40px; left: 550px">
+      <div
+        id="card2"
+        class="video-wrapper"
+        style="top: 0px; left: 50vw; width: 50vw; height: 100vh"
+      >
         <div class="video-header">
           <span>Stream Beta</span>
           <div class="header-controls">
@@ -184,7 +191,7 @@
           players["player2"].seekTo(state.lastKnownTime2, true);
       });
 
-      // Local Localized Volume Mute Functionality
+      // Local Volume Mute Functionality
       function toggleMute(playerId, button) {
         const player = players[playerId];
         if (!player || !player.isMuted) return;
@@ -212,7 +219,7 @@
         }
       }
 
-      // Client-side Draggable and Resizable Logic Interaction Core
+      // Client-side Draggable and Resizable Logic
       const cards = document.querySelectorAll(".video-wrapper");
       cards.forEach((card) => {
         const header = card.querySelector(".video-header");
@@ -238,8 +245,10 @@
           card.classList.add("interacting");
           startX = e.clientX;
           startY = e.clientY;
-          initialLeft = parseInt(card.style.left || 0, 10);
-          initialTop = parseInt(card.style.top || 0, 10);
+
+          // Parse current computed layouts dynamically so it transitions clean from percentages to raw pixels
+          initialLeft = card.offsetLeft;
+          initialTop = card.offsetTop;
         });
 
         // Resize Configuration
@@ -271,7 +280,7 @@
           }
         });
 
-        // Handle Mouse Release Events Cleanly
+        // Handle Mouse Release
         document.addEventListener("mouseup", () => {
           isDragging = false;
           isResizing = false;
