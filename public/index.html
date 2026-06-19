@@ -26,11 +26,14 @@
         position: absolute;
         width: 480px;
         height: 270px;
+        min-width: 200px;
+        min-height: 150px;
         background: #000;
         border: 2px solid #444;
         border-radius: 8px;
-        cursor: move;
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
       }
       .video-header {
         background: #222;
@@ -38,37 +41,108 @@
         font-size: 12px;
         display: flex;
         justify-content: space-between;
+        align-items: center;
         user-select: none;
         font-weight: bold;
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
+        cursor: move;
+      }
+      .header-controls {
+        display: flex;
+        gap: 6px;
+      }
+      .control-btn {
+        background: #333;
+        border: 1px solid #555;
+        color: #fff;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .control-btn:hover {
+        background: #444;
       }
       .video-container {
         width: 100%;
-        height: calc(100% - 28px);
+        flex-grow: 1;
         pointer-events: auto;
       }
-      .dragging .video-container {
+      /* Simple invisible blocker overlay during resize/drag to prevent iframe fighting */
+      .interacting .video-container {
         pointer-events: none;
+      }
+
+      /* Custom Resize Handle (Bottom-Right Corner) */
+      .resize-handle {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        right: 0;
+        bottom: 0;
+        cursor: se-resize;
+        background: linear-gradient(135deg, transparent 50%, #555 50%);
+        border-bottom-right-radius: 6px;
+      }
+
+      /* Fill Screen state applied entirely on the client side */
+      .filled-screen {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 9999;
+        border: none;
+        border-radius: 0;
+      }
+      .filled-screen .video-header {
+        border-radius: 0;
+      }
+      .filled-screen .resize-handle {
+        display: none; /* Hide sizing handle when full screen */
       }
     </style>
   </head>
   <body>
     <div id="workspace">
       <div id="card1" class="video-wrapper" style="top: 40px; left: 40px">
-        <div class="video-header">Stream Alpha (Drag Me)</div>
+        <div class="video-header">
+          <span>Stream Alpha</span>
+          <div class="header-controls">
+            <button class="control-btn" onclick="toggleMute('player1', this)">
+              Mute
+            </button>
+            <button class="control-btn" onclick="toggleFill('card1', this)">
+              Fill Screen
+            </button>
+          </div>
+        </div>
         <div id="player1" class="video-container"></div>
+        <div class="resize-handle"></div>
       </div>
 
       <div id="card2" class="video-wrapper" style="top: 40px; left: 550px">
-        <div class="video-header">Stream Beta (Drag Me)</div>
+        <div class="video-header">
+          <span>Stream Beta</span>
+          <div class="header-controls">
+            <button class="control-btn" onclick="toggleMute('player2', this)">
+              Mute
+            </button>
+            <button class="control-btn" onclick="toggleFill('card2', this)">
+              Fill Screen
+            </button>
+          </div>
+        </div>
         <div id="player2" class="video-container"></div>
+        <div class="resize-handle"></div>
       </div>
     </div>
 
     <script>
       const socket = io();
-      let player1, player2;
+      let players = {};
       let isInitialLoad = true;
 
       // Load YouTube API script asynchronously
@@ -78,70 +152,130 @@
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
       function onYouTubeIframeAPIReady() {
-        player1 = new YT.Player("player1", {
+        players["player1"] = new YT.Player("player1", {
           videoId: "",
           playerVars: { autoplay: 1, controls: 1 },
         });
-        player2 = new YT.Player("player2", {
+        players["player2"] = new YT.Player("player2", {
           videoId: "",
           playerVars: { autoplay: 1, controls: 1 },
         });
       }
 
-      // Handshake initialization
       socket.on("initial-state", (state) => {
-        if (isInitialLoad && player1 && player2) {
+        if (isInitialLoad && players["player1"] && players["player2"]) {
           setTimeout(() => {
-            player1.cueVideoById(state.video1);
-            player2.cueVideoById(state.video2);
+            players["player1"].cueVideoById(state.video1);
+            players["player2"].cueVideoById(state.video2);
             isInitialLoad = false;
           }, 1000);
         }
       });
 
-      // Listen for changes pushed from Admin panel
       socket.on("streams-updated", (state) => {
-        player1.loadVideoById(state.video1);
-        player2.loadVideoById(state.video2);
+        players["player1"].loadVideoById(state.video1);
+        players["player2"].loadVideoById(state.video2);
       });
 
-      // Listen for Sync signals pushed from Admin panel
       socket.on("force-client-sync", (state) => {
-        if (player1 && player1.seekTo)
-          player1.seekTo(state.lastKnownTime1, true);
-        if (player2 && player2.seekTo)
-          player2.seekTo(state.lastKnownTime2, true);
+        if (players["player1"] && players["player1"].seekTo)
+          players["player1"].seekTo(state.lastKnownTime1, true);
+        if (players["player2"] && players["player2"].seekTo)
+          players["player2"].seekTo(state.lastKnownTime2, true);
       });
 
-      // Client-side Local Dragging
+      // Local Localized Volume Mute Functionality
+      function toggleMute(playerId, button) {
+        const player = players[playerId];
+        if (!player || !player.isMuted) return;
+
+        if (player.isMuted()) {
+          player.unMute();
+          button.innerText = "Mute";
+          button.style.background = "#333";
+        } else {
+          player.mute();
+          button.innerText = "Unmute";
+          button.style.background = "#d32f2f";
+        }
+      }
+
+      // Local Maximize Window / Fill Screen Toggle
+      function toggleFill(cardId, button) {
+        const card = document.getElementById(cardId);
+        if (card.classList.contains("filled-screen")) {
+          card.classList.remove("filled-screen");
+          button.innerText = "Fill Screen";
+        } else {
+          card.classList.add("filled-screen");
+          button.innerText = "Exit Fill";
+        }
+      }
+
+      // Client-side Draggable and Resizable Logic Interaction Core
       const cards = document.querySelectorAll(".video-wrapper");
       cards.forEach((card) => {
         const header = card.querySelector(".video-header");
-        let isDragging = false;
-        let startX, startY, initialLeft, initialTop;
+        const handle = card.querySelector(".resize-handle");
 
+        let isDragging = false;
+        let isResizing = false;
+        let startX,
+          startY,
+          initialLeft,
+          initialTop,
+          initialWidth,
+          initialHeight;
+
+        // Drag Configuration
         header.addEventListener("mousedown", (e) => {
+          if (
+            e.target.tagName === "BUTTON" ||
+            card.classList.contains("filled-screen")
+          )
+            return;
           isDragging = true;
-          card.classList.add("dragging");
+          card.classList.add("interacting");
           startX = e.clientX;
           startY = e.clientY;
-          initialLeft = parseInt(card.style.left, 10);
-          initialTop = parseInt(card.style.top, 10);
+          initialLeft = parseInt(card.style.left || 0, 10);
+          initialTop = parseInt(card.style.top || 0, 10);
         });
 
+        // Resize Configuration
+        handle.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          if (card.classList.contains("filled-screen")) return;
+          isResizing = true;
+          card.classList.add("interacting");
+          startX = e.clientX;
+          startY = e.clientY;
+          initialWidth = card.offsetWidth;
+          initialHeight = card.offsetHeight;
+        });
+
+        // Global Movement Tracking
         document.addEventListener("mousemove", (e) => {
-          if (!isDragging) return;
-          const dx = e.clientX - startX;
-          const dy = e.clientY - startY;
-          card.style.left = `${initialLeft + dx}px`;
-          card.style.top = `${initialTop + dy}px`;
+          if (isDragging) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            card.style.left = `${initialLeft + dx}px`;
+            card.style.top = `${initialTop + dy}px`;
+          }
+
+          if (isResizing) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            card.style.width = `${initialWidth + dx}px`;
+            card.style.height = `${initialHeight + dy}px`;
+          }
         });
 
+        // Handle Mouse Release Events Cleanly
         document.addEventListener("mouseup", () => {
-          if (isDragging) {
-            isDragging = false;
-            card.classList.remove("dragging");
-          }
+          isDragging = false;
+          isResizing = false;
+          card.classList.remove("interacting");
         });
       });
     </script>
