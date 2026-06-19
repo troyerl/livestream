@@ -52,7 +52,7 @@
         gap: 6px;
       }
       .control-btn {
-        background: #333;
+        background: #d32f2f; /* Clear red background indicating muted status */
         border: 1px solid #555;
         color: #fff;
         font-size: 11px;
@@ -61,19 +61,18 @@
         cursor: pointer;
       }
       .control-btn:hover {
-        background: #444;
+        background: #b71c1c;
       }
       .video-container {
         width: 100%;
         flex-grow: 1;
         pointer-events: auto;
       }
-      /* Invisible blocker overlay during resize/drag to prevent iframe fighting */
+      /* Simple blocker frame to prevent mouse focus loss while resizing or moving cards */
       .interacting .video-container {
         pointer-events: none;
       }
 
-      /* Custom Resize Handle (Bottom-Right Corner) */
       .resize-handle {
         position: absolute;
         width: 15px;
@@ -85,7 +84,6 @@
         border-bottom-right-radius: 6px;
       }
 
-      /* Fill Screen state applied entirely on the client side */
       .filled-screen {
         position: fixed !important;
         top: 0 !important;
@@ -115,9 +113,13 @@
           <span>Stream Alpha</span>
           <div class="header-controls">
             <button class="control-btn" onclick="toggleMute('player1', this)">
-              Mute
+              Unmute
             </button>
-            <button class="control-btn" onclick="toggleFill('card1', this)">
+            <button
+              class="control-btn"
+              style="background: #333"
+              onclick="toggleFill('card1', this)"
+            >
               Fill Screen
             </button>
           </div>
@@ -135,9 +137,13 @@
           <span>Stream Beta</span>
           <div class="header-controls">
             <button class="control-btn" onclick="toggleMute('player2', this)">
-              Mute
+              Unmute
             </button>
-            <button class="control-btn" onclick="toggleFill('card2', this)">
+            <button
+              class="control-btn"
+              style="background: #333"
+              onclick="toggleFill('card2', this)"
+            >
               Fill Screen
             </button>
           </div>
@@ -159,13 +165,14 @@
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
       function onYouTubeIframeAPIReady() {
+        // Both instances initialized with mute parameter active for consistent playback load
         players["player1"] = new YT.Player("player1", {
           videoId: "",
-          playerVars: { autoplay: 1, controls: 1 },
+          playerVars: { autoplay: 1, controls: 1, mute: 1 },
         });
         players["player2"] = new YT.Player("player2", {
           videoId: "",
-          playerVars: { autoplay: 1, controls: 1 },
+          playerVars: { autoplay: 1, controls: 1, mute: 1 },
         });
       }
 
@@ -191,7 +198,7 @@
           players["player2"].seekTo(state.lastKnownTime2, true);
       });
 
-      // Local Volume Mute Functionality
+      // Local Volume Toggle Core
       function toggleMute(playerId, button) {
         const player = players[playerId];
         if (!player || !player.isMuted) return;
@@ -219,7 +226,7 @@
         }
       }
 
-      // Client-side Draggable and Resizable Logic
+      // Client-side Draggable and Resizable Logic Interaction Event Handlers
       const cards = document.querySelectorAll(".video-wrapper");
       cards.forEach((card) => {
         const header = card.querySelector(".video-header");
@@ -234,7 +241,6 @@
           initialWidth,
           initialHeight;
 
-        // Drag Configuration
         header.addEventListener("mousedown", (e) => {
           if (
             e.target.tagName === "BUTTON" ||
@@ -245,13 +251,10 @@
           card.classList.add("interacting");
           startX = e.clientX;
           startY = e.clientY;
-
-          // Parse current computed layouts dynamically so it transitions clean from percentages to raw pixels
           initialLeft = card.offsetLeft;
           initialTop = card.offsetTop;
         });
 
-        // Resize Configuration
         handle.addEventListener("mousedown", (e) => {
           e.preventDefault();
           if (card.classList.contains("filled-screen")) return;
@@ -263,7 +266,6 @@
           initialHeight = card.offsetHeight;
         });
 
-        // Global Movement Tracking
         document.addEventListener("mousemove", (e) => {
           if (isDragging) {
             const dx = e.clientX - startX;
@@ -280,7 +282,6 @@
           }
         });
 
-        // Handle Mouse Release
         document.addEventListener("mouseup", () => {
           isDragging = false;
           isResizing = false;
