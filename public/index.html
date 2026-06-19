@@ -52,7 +52,7 @@
         gap: 6px;
       }
       .control-btn {
-        background: #d32f2f; /* Clear red background indicating muted status */
+        background: #d32f2f;
         border: 1px solid #555;
         color: #fff;
         font-size: 11px;
@@ -68,7 +68,6 @@
         flex-grow: 1;
         pointer-events: auto;
       }
-      /* Simple blocker frame to prevent mouse focus loss while resizing or moving cards */
       .interacting .video-container {
         pointer-events: none;
       }
@@ -156,7 +155,8 @@
     <script>
       const socket = io();
       let players = {};
-      let isInitialLoad = true;
+      let pendingVideoIds = { player1: null, player2: null };
+      let playersReadyStatus = { player1: false, player2: false };
 
       // Load YouTube API script asynchronously
       const tag = document.createElement("script");
@@ -165,43 +165,64 @@
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
       function onYouTubeIframeAPIReady() {
-        // Both instances initialized with mute parameter active for consistent playback load
+        // We pass explicitly monitored event callbacks to guarantee safety
         players["player1"] = new YT.Player("player1", {
-          videoId: "",
-          playerVars: { autoplay: 1, controls: 1, mute: 1 },
+          playerVars: { autoplay: 1, controls: 1, mute: 1, rel: 0 },
+          events: { onReady: (e) => onPlayerReady("player1") },
         });
         players["player2"] = new YT.Player("player2", {
-          videoId: "",
-          playerVars: { autoplay: 1, controls: 1, mute: 1 },
+          playerVars: { autoplay: 1, controls: 1, mute: 1, rel: 0 },
+          events: { onReady: (e) => onPlayerReady("player2") },
         });
       }
 
+      // This runs ONLY when the iframe has completely loaded and is listening for actions
+      function onPlayerReady(playerId) {
+        playersReadyStatus[playerId] = true;
+
+        // If we received the stream IDs from the server while waiting, load them now
+        if (pendingVideoIds[playerId]) {
+          players[playerId].loadVideoById(pendingVideoIds[playerId]);
+          pendingVideoIds[playerId] = null;
+        }
+      }
+
+      // Catch initial server load state safely
       socket.on("initial-state", (state) => {
-        if (isInitialLoad && players["player1"] && players["player2"]) {
-          setTimeout(() => {
-            players["player1"].cueVideoById(state.video1);
-            players["player2"].cueVideoById(state.video2);
-            isInitialLoad = false;
-          }, 1000);
+        // Process Stream 1
+        if (playersReadyStatus["player1"]) {
+          players["player1"].loadVideoById(state.video1);
+        } else {
+          pendingVideoIds["player1"] = state.video1;
+        }
+
+        // Process Stream 2
+        if (playersReadyStatus["player2"]) {
+          players["player2"].loadVideoById(state.video2);
+        } else {
+          pendingVideoIds["player2"] = state.video2;
         }
       });
 
+      // Handle Admin mid-session feed changes
       socket.on("streams-updated", (state) => {
-        players["player1"].loadVideoById(state.video1);
-        players["player2"].loadVideoById(state.video2);
+        if (playersReadyStatus["player1"])
+          players["player1"].loadVideoById(state.video1);
+        if (playersReadyStatus["player2"])
+          players["player2"].loadVideoById(state.video2);
       });
 
       socket.on("force-client-sync", (state) => {
-        if (players["player1"] && players["player1"].seekTo)
+        if (playersReadyStatus["player1"] && players["player1"].seekTo)
           players["player1"].seekTo(state.lastKnownTime1, true);
-        if (players["player2"] && players["player2"].seekTo)
+        if (playersReadyStatus["player2"] && players["player2"].seekTo)
           players["player2"].seekTo(state.lastKnownTime2, true);
       });
 
-      // Local Volume Toggle Core
+      // Local Volume Toggle
       function toggleMute(playerId, button) {
         const player = players[playerId];
-        if (!player || !player.isMuted) return;
+        if (!playersReadyStatus[playerId] || !player || !player.isMuted) return;
 
         if (player.isMuted()) {
           player.unMute();
@@ -226,7 +247,7 @@
         }
       }
 
-      // Client-side Draggable and Resizable Logic Interaction Event Handlers
+      // Client-side Draggable and Resizable Framework
       const cards = document.querySelectorAll(".video-wrapper");
       cards.forEach((card) => {
         const header = card.querySelector(".video-header");
