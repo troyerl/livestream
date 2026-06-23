@@ -66,9 +66,7 @@
       .video-container {
         width: 100%;
         flex-grow: 1;
-        pointer-events: auto;
-      }
-      .interacting .video-container {
+        /* Block all hover/click interaction with the YouTube iframe */
         pointer-events: none;
       }
 
@@ -167,11 +165,25 @@
       function onYouTubeIframeAPIReady() {
         // We pass explicitly monitored event callbacks to guarantee safety
         players["player1"] = new YT.Player("player1", {
-          playerVars: { autoplay: 1, controls: 1, mute: 1, rel: 0 },
+          playerVars: {
+            autoplay: 1,
+            controls: 0,
+            mute: 1,
+            rel: 0,
+            disablekb: 1,
+            modestbranding: 1,
+          },
           events: { onReady: (e) => onPlayerReady("player1") },
         });
         players["player2"] = new YT.Player("player2", {
-          playerVars: { autoplay: 1, controls: 1, mute: 1, rel: 0 },
+          playerVars: {
+            autoplay: 1,
+            controls: 0,
+            mute: 1,
+            rel: 0,
+            disablekb: 1,
+            modestbranding: 1,
+          },
           events: { onReady: (e) => onPlayerReady("player2") },
         });
       }
@@ -218,6 +230,63 @@
         if (playersReadyStatus["player2"] && players["player2"].seekTo)
           players["player2"].seekTo(state.lastKnownTime2, true);
       });
+
+      // Persistent delay buffer: how many seconds behind the live edge each
+      // stream should stay. Admin commands add to this, and a maintenance loop
+      // continuously holds the player at that offset so YouTube can't snap it
+      // back toward live.
+      let delayOffset = { player1: 0, player2: 0 };
+
+      socket.on("force-client-delay", (data) => {
+        const playerId = data.stream === 2 ? "player2" : "player1";
+        delayOffset[playerId] += data.seconds;
+        applyDelay(playerId);
+      });
+
+      function liveEdgeFor(player) {
+        // For live streams getDuration() reports the current live edge; for a
+        // normal video it's the full length. Either way it's our reference end.
+        const edge = player.getDuration ? player.getDuration() : 0;
+        return edge && edge > 0 ? edge : null;
+      }
+
+      function applyDelay(playerId) {
+        const player = players[playerId];
+        const offset = delayOffset[playerId];
+        if (offset <= 0 || !playersReadyStatus[playerId] || !player || !player.seekTo)
+          return;
+
+        const edge = liveEdgeFor(player);
+        const target = (edge !== null ? edge : player.getCurrentTime()) - offset;
+        player.seekTo(target > 0 ? target : 0, true);
+      }
+
+      // Maintenance loop keeps the configured delay persistent. If a stream
+      // drifts back toward the live edge (buffering, auto catch-up, etc.) we
+      // push it back to the intended offset.
+      setInterval(() => {
+        ["player1", "player2"].forEach((playerId) => {
+          const player = players[playerId];
+          const offset = delayOffset[playerId];
+          if (
+            offset <= 0 ||
+            !playersReadyStatus[playerId] ||
+            !player ||
+            !player.seekTo
+          )
+            return;
+
+          const edge = liveEdgeFor(player);
+          if (edge === null) return;
+
+          const target = edge - offset;
+          const current = player.getCurrentTime();
+          // Only correct meaningful drift toward live to avoid constant seeking.
+          if (current > target + 1.5) {
+            player.seekTo(target > 0 ? target : 0, true);
+          }
+        });
+      }, 2000);
 
       // Local Volume Toggle
       function toggleMute(playerId, button) {

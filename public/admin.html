@@ -68,6 +68,18 @@
       .btn-sync:hover {
         background-color: #aa0000;
       }
+      .delay-controls {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+      }
+      .btn-delay {
+        background-color: #ff9800;
+        color: #1a1a1a;
+      }
+      .btn-delay:hover {
+        background-color: #e68900;
+      }
       #status-msg {
         margin-top: 15px;
         font-size: 14px;
@@ -104,6 +116,15 @@
       <button class="btn-sync" onclick="triggerAdminSync()">
         Force Sync All Viewers
       </button>
+
+      <div class="delay-controls">
+        <button class="btn-delay" onclick="delayStream(1)">
+          Delay Stream Alpha 3s
+        </button>
+        <button class="btn-delay" onclick="delayStream(2)">
+          Delay Stream Beta 3s
+        </button>
+      </div>
 
       <div id="status-msg"></div>
     </div>
@@ -166,6 +187,12 @@
         };
         socket.emit("admin-sync-command", syncPayload);
         showStatus("Sent timeline synchronization down to viewers!");
+      }
+
+      function delayStream(stream) {
+        socket.emit("admin-delay-stream", { stream: stream, seconds: 3 });
+        const name = stream === 1 ? "Alpha" : "Beta";
+        showStatus(`Delayed Stream ${name} by 3 seconds for all viewers!`);
       }
 
       function showStatus(msg) {

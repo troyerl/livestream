@@ -40,6 +40,15 @@ io.on("connection", (socket) => {
     // Broadcast the exact timestamps to all viewer clients
     io.emit("force-client-sync", streamState);
   });
+
+  // Listen for Admin requesting a playback delay on a given stream
+  socket.on("admin-delay-stream", (data) => {
+    const stream = data.stream === 2 ? 2 : 1;
+    const seconds = Number(data.seconds) > 0 ? Number(data.seconds) : 3;
+
+    // Tell every viewer to push the chosen stream back by `seconds`
+    io.emit("force-client-delay", { stream, seconds });
+  });
 });
 
 const PORT = process.env.PORT || 3000;
