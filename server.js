@@ -18,6 +18,9 @@ let streamState = {
   video2: "DWcJYXZMnbc",
   lastKnownTime1: 0,
   lastKnownTime2: 0,
+  // Persistent delay (seconds behind live) applied to each stream for everyone
+  delay1: 0,
+  delay2: 0,
 };
 
 io.on("connection", (socket) => {
@@ -41,13 +44,18 @@ io.on("connection", (socket) => {
     io.emit("force-client-sync", streamState);
   });
 
-  // Listen for Admin requesting a playback delay on a given stream
-  socket.on("admin-delay-stream", (data) => {
+  // Listen for Admin setting the persistent playback delay on a given stream.
+  // Stored in shared state so it survives reloads and applies to new viewers.
+  socket.on("admin-set-delay", (data) => {
     const stream = data.stream === 2 ? 2 : 1;
-    const seconds = Number(data.seconds) > 0 ? Number(data.seconds) : 3;
+    const parsed = Number(data.seconds);
+    const seconds = isFinite(parsed) && parsed > 0 ? parsed : 0;
 
-    // Tell every viewer to push the chosen stream back by `seconds`
-    io.emit("force-client-delay", { stream, seconds });
+    if (stream === 1) streamState.delay1 = seconds;
+    else streamState.delay2 = seconds;
+
+    // Tell every viewer the new absolute delay for this stream
+    io.emit("delay-updated", { stream, seconds });
   });
 });
 

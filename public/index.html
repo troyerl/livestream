@@ -214,6 +214,15 @@
         } else {
           pendingVideoIds["player2"] = state.video2;
         }
+
+        // Adopt any persistent delay the server already has configured
+        delayOffset["player1"] = Number(state.delay1) || 0;
+        delayOffset["player2"] = Number(state.delay2) || 0;
+        // Give the freshly loaded video a moment before seeking back
+        setTimeout(() => {
+          applyDelay("player1");
+          applyDelay("player2");
+        }, 2000);
       });
 
       // Handle Admin mid-session feed changes
@@ -237,9 +246,9 @@
       // back toward live.
       let delayOffset = { player1: 0, player2: 0 };
 
-      socket.on("force-client-delay", (data) => {
+      socket.on("delay-updated", (data) => {
         const playerId = data.stream === 2 ? "player2" : "player1";
-        delayOffset[playerId] += data.seconds;
+        delayOffset[playerId] = Number(data.seconds) || 0;
         applyDelay(playerId);
       });
 
@@ -252,12 +261,12 @@
 
       function applyDelay(playerId) {
         const player = players[playerId];
-        const offset = delayOffset[playerId];
-        if (offset <= 0 || !playersReadyStatus[playerId] || !player || !player.seekTo)
-          return;
+        if (!playersReadyStatus[playerId] || !player || !player.seekTo) return;
 
+        const offset = delayOffset[playerId];
         const edge = liveEdgeFor(player);
-        const target = (edge !== null ? edge : player.getCurrentTime()) - offset;
+        const base = edge !== null ? edge : player.getCurrentTime();
+        const target = base - offset; // offset 0 seeks back to the live edge
         player.seekTo(target > 0 ? target : 0, true);
       }
 

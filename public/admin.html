@@ -71,7 +71,25 @@
       .delay-controls {
         margin-top: 15px;
         display: flex;
-        gap: 10px;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+      .delay-group label {
+        margin-bottom: 6px;
+      }
+      .delay-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .delay-row input[type="number"] {
+        width: 80px;
+        padding: 10px;
+        background: #3a3a3a;
+        border: 1px solid #555;
+        color: #fff;
+        border-radius: 4px;
+        box-sizing: border-box;
       }
       .btn-delay {
         background-color: #ff9800;
@@ -84,6 +102,42 @@
         margin-top: 15px;
         font-size: 14px;
         color: #00ff00;
+      }
+      .time-readout {
+        margin-top: 25px;
+        border-top: 1px solid #444;
+        padding-top: 15px;
+      }
+      .time-readout h2 {
+        font-size: 16px;
+        color: #ccc;
+        margin: 0 0 12px;
+      }
+      .stream-time {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        background: #333;
+        padding: 10px 12px;
+        border-radius: 4px;
+        margin-bottom: 8px;
+      }
+      .stream-time .name {
+        font-weight: bold;
+        color: #ff9800;
+      }
+      .stream-time .times {
+        font-variant-numeric: tabular-nums;
+        font-size: 14px;
+        color: #ddd;
+      }
+      .stream-time .times .target {
+        color: #00e676;
+        font-weight: bold;
+      }
+      .stream-time .delay-tag {
+        font-size: 12px;
+        color: #aaa;
       }
 
       /* Keeps admin instance tracking players active but hidden visually */
@@ -118,15 +172,43 @@
       </button>
 
       <div class="delay-controls">
-        <button class="btn-delay" onclick="delayStream(1)">
-          Delay Stream Alpha 3s
-        </button>
-        <button class="btn-delay" onclick="delayStream(2)">
-          Delay Stream Beta 3s
-        </button>
+        <div class="delay-group">
+          <label for="delay1-input">Stream Alpha delay (s)</label>
+          <div class="delay-row">
+            <input type="number" id="delay1-input" min="0" step="1" value="0" />
+            <button class="btn-delay" onclick="setDelay(1)">Apply</button>
+          </div>
+        </div>
+        <div class="delay-group">
+          <label for="delay2-input">Stream Beta delay (s)</label>
+          <div class="delay-row">
+            <input type="number" id="delay2-input" min="0" step="1" value="0" />
+            <button class="btn-delay" onclick="setDelay(2)">Apply</button>
+          </div>
+        </div>
       </div>
 
       <div id="status-msg"></div>
+
+      <div class="time-readout">
+        <h2>Stream Timeline (where viewers should be)</h2>
+        <div class="stream-time">
+          <span class="name">Stream Alpha</span>
+          <span class="times">
+            Live: <span id="live1">--:--</span>
+            &nbsp;|&nbsp; Target: <span class="target" id="target1">--:--</span>
+            <span class="delay-tag" id="delay1">(no delay)</span>
+          </span>
+        </div>
+        <div class="stream-time">
+          <span class="name">Stream Beta</span>
+          <span class="times">
+            Live: <span id="live2">--:--</span>
+            &nbsp;|&nbsp; Target: <span class="target" id="target2">--:--</span>
+            <span class="delay-tag" id="delay2">(no delay)</span>
+          </span>
+        </div>
+      </div>
     </div>
 
     <div id="admin-tracking-players">
@@ -137,6 +219,9 @@
     <script>
       const socket = io();
       let player1, player2;
+      // Cumulative delay (seconds) the admin has applied to each stream.
+      // Mirrors the persistent buffer running on every viewer.
+      let delayOffset = { 1: 0, 2: 0 };
 
       // Load YouTube API script asynchronously
       const tag = document.createElement("script");
@@ -158,10 +243,16 @@
       socket.on("initial-state", (state) => {
         document.getElementById("vid1-input").value = state.video1;
         document.getElementById("vid2-input").value = state.video2;
+
+        // Adopt the persisted delay so the readout/inputs survive reloads
+        applyDelayState(1, Number(state.delay1) || 0);
+        applyDelayState(2, Number(state.delay2) || 0);
+
         setTimeout(() => {
           if (player1 && player2) {
-            player1.cueVideoById(state.video1);
-            player2.cueVideoById(state.video2);
+            // Load (and play) so the tracking players report live timestamps
+            player1.loadVideoById(state.video1);
+            player2.loadVideoById(state.video2);
           }
         }, 1000);
       });
@@ -170,6 +261,17 @@
         player1.loadVideoById(state.video1);
         player2.loadVideoById(state.video2);
       });
+
+      // Keep this admin in sync if the delay is changed elsewhere
+      socket.on("delay-updated", (data) => {
+        applyDelayState(data.stream, Number(data.seconds) || 0);
+      });
+
+      function applyDelayState(stream, seconds) {
+        delayOffset[stream] = seconds;
+        const input = document.getElementById(`delay${stream}-input`);
+        if (input && document.activeElement !== input) input.value = seconds;
+      }
 
       function updateStreams() {
         const v1 = document.getElementById("vid1-input").value;
@@ -189,11 +291,44 @@
         showStatus("Sent timeline synchronization down to viewers!");
       }
 
-      function delayStream(stream) {
-        socket.emit("admin-delay-stream", { stream: stream, seconds: 3 });
+      function setDelay(stream) {
+        const input = document.getElementById(`delay${stream}-input`);
+        let seconds = Number(input.value);
+        if (!isFinite(seconds) || seconds < 0) seconds = 0;
+        input.value = seconds;
+
+        socket.emit("admin-set-delay", { stream: stream, seconds: seconds });
+        delayOffset[stream] = seconds;
         const name = stream === 1 ? "Alpha" : "Beta";
-        showStatus(`Delayed Stream ${name} by 3 seconds for all viewers!`);
+        showStatus(`Set Stream ${name} delay to ${seconds}s for all viewers!`);
       }
+
+      function formatTime(seconds) {
+        if (!isFinite(seconds) || seconds < 0) return "--:--";
+        const total = Math.floor(seconds);
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return `${m}:${String(s).padStart(2, "0")}`;
+      }
+
+      function updateTimeReadout(stream, player) {
+        if (!player || !player.getCurrentTime) return;
+        const live = player.getCurrentTime();
+        const offset = delayOffset[stream];
+        const target = live - offset;
+
+        document.getElementById(`live${stream}`).innerText = formatTime(live);
+        document.getElementById(`target${stream}`).innerText =
+          formatTime(target);
+        document.getElementById(`delay${stream}`).innerText =
+          offset > 0 ? `(−${offset}s behind live)` : "(no delay)";
+      }
+
+      // Refresh the timeline readout once per second
+      setInterval(() => {
+        updateTimeReadout(1, player1);
+        updateTimeReadout(2, player2);
+      }, 1000);
 
       function showStatus(msg) {
         const div = document.getElementById("status-msg");
