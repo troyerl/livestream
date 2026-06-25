@@ -104,7 +104,7 @@
         left: 0;
         width: 100vw;
         height: 100vh;
-        z-index: 10000;
+        z-index: 10050;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -142,12 +142,120 @@
           opacity: 1;
         }
       }
+
+      /* Live chat panel */
+      #chat-toggle {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 10000;
+        background: #d32f2f;
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      #chat-toggle.hidden {
+        display: none;
+      }
+      #chat-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 340px;
+        height: 100vh;
+        z-index: 10000;
+        background: #181818;
+        border-left: 1px solid #333;
+        box-shadow: -6px 0 20px rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
+        transform: translateX(100%);
+        transition: transform 0.2s ease;
+      }
+      #chat-panel.open {
+        transform: translateX(0);
+      }
+      #chat-tabs {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px;
+        background: #222;
+        border-bottom: 1px solid #333;
+      }
+      .chat-tab {
+        background: #333;
+        color: #ccc;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .chat-tab.active {
+        background: #d32f2f;
+        color: #fff;
+      }
+      #chat-close {
+        margin-left: auto;
+        background: transparent;
+        color: #aaa;
+        border: none;
+        font-size: 22px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0 6px;
+      }
+      #chat-close:hover {
+        color: #fff;
+      }
+      #chat-frame {
+        flex-grow: 1;
+        width: 100%;
+        border: none;
+        background: #fff;
+      }
+      #chat-empty {
+        flex-grow: 1;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 20px;
+        color: #999;
+        font-size: 14px;
+      }
     </style>
   </head>
   <body>
     <div id="waiting-screen">
       <div class="waiting-text">Waiting for streams to start</div>
       <div class="waiting-dots"><span>.</span><span>.</span><span>.</span></div>
+    </div>
+
+    <button id="chat-toggle" onclick="toggleChat()">Chat</button>
+    <div id="chat-panel">
+      <div id="chat-tabs">
+        <button class="chat-tab active" data-stream="1" onclick="selectChat(1)">
+          Main
+        </button>
+        <button class="chat-tab" data-stream="2" onclick="selectChat(2)">
+          Driver
+        </button>
+        <button id="chat-close" onclick="toggleChat()" title="Close chat">
+          &times;
+        </button>
+      </div>
+      <iframe id="chat-frame" title="Live chat"></iframe>
+      <div id="chat-empty">
+        No live chat available for this stream yet. Chat only works while the
+        stream is live with chat enabled.
+      </div>
     </div>
 
     <div id="workspace">
@@ -205,6 +313,8 @@
       let players = {};
       let pendingVideoIds = { player1: null, player2: null };
       let playersReadyStatus = { player1: false, player2: false };
+      // Latest video IDs per stream, used to build the live chat embed URL
+      let currentVideos = { 1: null, 2: null };
 
       // Load YouTube API script asynchronously
       const tag = document.createElement("script");
@@ -330,6 +440,10 @@
           pendingVideoIds["player2"] = state.video2;
         }
 
+        currentVideos[1] = state.video1;
+        currentVideos[2] = state.video2;
+        refreshChat();
+
         // Adopt any persistent delay the server already has configured
         delayOffset["player1"] = Number(state.delay1) || 0;
         delayOffset["player2"] = Number(state.delay2) || 0;
@@ -346,6 +460,10 @@
           players["player1"].loadVideoById(state.video1);
         if (playersReadyStatus["player2"])
           players["player2"].loadVideoById(state.video2);
+
+        currentVideos[1] = state.video1;
+        currentVideos[2] = state.video2;
+        refreshChat();
       });
 
       socket.on("force-client-sync", (state) => {
@@ -426,6 +544,59 @@
           button.innerText = "Unmute";
           button.style.background = "#d32f2f";
         }
+      }
+
+      // ---- Live chat panel (embeds YouTube live chat for a chosen stream) ----
+      let activeChatStream = 1;
+      let chatOpen = false;
+
+      function buildChatUrl(stream) {
+        const videoId = currentVideos[stream];
+        if (!videoId) return null;
+        return (
+          "https://www.youtube.com/live_chat?v=" +
+          encodeURIComponent(videoId) +
+          "&embed_domain=" +
+          location.hostname
+        );
+      }
+
+      function refreshChat() {
+        if (!chatOpen) return; // only load the iframe while the panel is open
+        const frame = document.getElementById("chat-frame");
+        const empty = document.getElementById("chat-empty");
+        const url = buildChatUrl(activeChatStream);
+
+        if (url) {
+          // Avoid reloading (and resetting scroll) if the URL is unchanged
+          if (frame.getAttribute("src") !== url) frame.setAttribute("src", url);
+          frame.style.display = "block";
+          empty.style.display = "none";
+        } else {
+          frame.removeAttribute("src");
+          frame.style.display = "none";
+          empty.style.display = "flex";
+        }
+      }
+
+      function selectChat(stream) {
+        activeChatStream = stream;
+        document.querySelectorAll(".chat-tab").forEach((btn) => {
+          btn.classList.toggle(
+            "active",
+            Number(btn.dataset.stream) === stream,
+          );
+        });
+        refreshChat();
+      }
+
+      function toggleChat() {
+        chatOpen = !chatOpen;
+        document.getElementById("chat-panel").classList.toggle("open", chatOpen);
+        document
+          .getElementById("chat-toggle")
+          .classList.toggle("hidden", chatOpen);
+        refreshChat();
       }
 
       // Local Maximize Window / Fill Screen Toggle. A manual press takes over
