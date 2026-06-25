@@ -14,8 +14,8 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // Global state tracking for sync
 let streamState = {
-  video1: "5qap5aO4i9A", // Default fallback YouTube Video IDs
-  video2: "DWcJYXZMnbc",
+  video1: "k_MWm6w2uA4", // Default fallback YouTube Video IDs
+  video2: "Mn56jZI56B8",
   lastKnownTime1: 0,
   lastKnownTime2: 0,
   // Persistent delay (seconds behind live) applied to each stream for everyone

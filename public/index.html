@@ -107,13 +107,13 @@
         style="top: 0px; left: 0px; width: 50vw; height: 100vh"
       >
         <div class="video-header">
-          <span>Stream Alpha</span>
+          <span></span>
           <div class="header-controls">
             <button class="control-btn" onclick="toggleMute('player1', this)">
               Unmute
             </button>
             <button
-              class="control-btn"
+              class="control-btn fill-btn"
               style="background: #333"
               onclick="toggleFill('card1', this)"
             >
@@ -131,13 +131,13 @@
         style="top: 0px; left: 50vw; width: 50vw; height: 100vh"
       >
         <div class="video-header">
-          <span>Stream Beta</span>
+          <span></span>
           <div class="header-controls">
             <button class="control-btn" onclick="toggleMute('player2', this)">
               Unmute
             </button>
             <button
-              class="control-btn"
+              class="control-btn fill-btn"
               style="background: #333"
               onclick="toggleFill('card2', this)"
             >
@@ -173,7 +173,10 @@
             disablekb: 1,
             modestbranding: 1,
           },
-          events: { onReady: (e) => onPlayerReady("player1") },
+          events: {
+            onReady: (e) => onPlayerReady("player1"),
+            onStateChange: (e) => onPlayerStateChange("player1", e),
+          },
         });
         players["player2"] = new YT.Player("player2", {
           playerVars: {
@@ -184,7 +187,10 @@
             disablekb: 1,
             modestbranding: 1,
           },
-          events: { onReady: (e) => onPlayerReady("player2") },
+          events: {
+            onReady: (e) => onPlayerReady("player2"),
+            onStateChange: (e) => onPlayerStateChange("player2", e),
+          },
         });
       }
 
@@ -196,6 +202,56 @@
         if (pendingVideoIds[playerId]) {
           players[playerId].loadVideoById(pendingVideoIds[playerId]);
           pendingVideoIds[playerId] = null;
+        }
+      }
+
+      // Tracks which streams are actively playing so we can auto-fill a solo
+      // stream and fall back to split screen once both are live.
+      let isPlaying = { player1: false, player2: false };
+      // Disabled once a viewer manually toggles fill, so we never fight them.
+      let autoLayoutEnabled = true;
+
+      function onPlayerStateChange(playerId, event) {
+        if (event.data === YT.PlayerState.PLAYING) {
+          isPlaying[playerId] = true;
+        } else if (event.data === YT.PlayerState.BUFFERING) {
+          // Ignore buffering (e.g. during delay seeks) to avoid layout flicker
+          return;
+        } else {
+          // Paused, ended, cued or unstarted all count as "not playing"
+          isPlaying[playerId] = false;
+        }
+        updateAutoLayout();
+      }
+
+      function updateAutoLayout() {
+        if (!autoLayoutEnabled) return;
+        const aliveAlpha = isPlaying["player1"];
+        const aliveBeta = isPlaying["player2"];
+
+        if (aliveAlpha && !aliveBeta) {
+          setFill("card1", true);
+          setFill("card2", false);
+        } else if (aliveBeta && !aliveAlpha) {
+          setFill("card2", true);
+          setFill("card1", false);
+        } else {
+          // Both playing or neither playing -> balanced split screen
+          setFill("card1", false);
+          setFill("card2", false);
+        }
+      }
+
+      // Adds/removes full-screen fill on a card and keeps its button label synced
+      function setFill(cardId, on) {
+        const card = document.getElementById(cardId);
+        const btn = card.querySelector(".fill-btn");
+        if (on) {
+          card.classList.add("filled-screen");
+          if (btn) btn.innerText = "Exit Fill";
+        } else {
+          card.classList.remove("filled-screen");
+          if (btn) btn.innerText = "Fill Screen";
         }
       }
 
@@ -313,16 +369,12 @@
         }
       }
 
-      // Local Maximize Window / Fill Screen Toggle
+      // Local Maximize Window / Fill Screen Toggle. A manual press takes over
+      // from the automatic solo-stream layout for the rest of the session.
       function toggleFill(cardId, button) {
+        autoLayoutEnabled = false;
         const card = document.getElementById(cardId);
-        if (card.classList.contains("filled-screen")) {
-          card.classList.remove("filled-screen");
-          button.innerText = "Fill Screen";
-        } else {
-          card.classList.add("filled-screen");
-          button.innerText = "Exit Fill";
-        }
+        setFill(cardId, !card.classList.contains("filled-screen"));
       }
 
       // Client-side Draggable and Resizable Framework
